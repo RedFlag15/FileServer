@@ -1,23 +1,35 @@
 import zmq, sys
 
-if len(sys.argv) != 2:
-    print("Sample call: python <server.py> <address: <ip>:<port>>")
-    exit()
-clientAddress = sys.argv[1]
+def main():
+    if len(sys.argv) != 2:
+        print("Sample call: python <server.py> <address: <ip>:<port>>")
+        exit()
 
-context = zmq.Context()
-proxySocket = context.socket(zmq.REP)
-proxySocket.bind("tcp://localhost:5555")
+    filesFolder = "files/"
 
-clientSocket = context.socket(zmq.REP)
-clientSocket.bind("tcp://{}".format(clientAddress))
+    clientAddress = sys.argv[1]
+    print(clientAddress)
+    context = zmq.Context()
+    proxySocket = context.socket(zmq.REQ)
+    proxySocket.connect("tcp://127.0.0.1:5555")
 
-proxySocket.send_multipart([b'newServer',bytes(clientAddress, "ascii")])
-response = proxySocket.recv()
-print(response)
+    clientSocket = context.socket(zmq.REP)
+    clientSocket.bind("tcp://{}".format(clientAddress))
 
-while True:
-    filename, data = proxySocket.recv_multipart()
-    with open(filename, "ab") as f:
-        f.write(data)
-    proxySocket.send(b"Done")
+    proxySocket.send_multipart([b'newServer', bytes(clientAddress, "ascii")])
+    response = proxySocket.recv()
+    print(response)
+
+    while True:
+        operation, *data = clientSocket.recv_multipart()
+        if operation == b'upload':
+            filename, bt, sha1bt, sha1File = data
+            storeAs = filesFolder + sha1bt.decode("ascii")
+            with open(storeAs, "wb") as f:
+                f.write(bt)
+            clientSocket.send(b"Done")
+        else:
+            clientSocket.send(b'Unsupported operation')
+
+if __name__ == '__main__':
+    main()

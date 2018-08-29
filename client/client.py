@@ -11,21 +11,26 @@ def uploadFile(context, filename, servers):
         sockets.append(s)
 
     with open(filename, "rb") as f:
+        part = 0
         while True:
             data = f.read(partSize)
             if not data:
                 break
+            print("Uploading part {}".format(part))
             sha1bt = bytes(computeHash(data), "ascii")
-            servers[0].send_multipart([filename, data, sha1bt, fileSha1])
-            response = servers[0].recv()
-            servers.append(servers.pop(0))
+            sockets[0].send_multipart([b'upload', filename, data, sha1bt, fileSha1])
+            response = sockets[0].recv()
             print("Reply [%s ]" %(response))
+            #sockets.append(sockets.pop(0))
+            part += 1
+            
 
 def computeHashFile(filename):
+    BUFFER = 65536
     sha1 = hashlib.sha1()
     with open(filename, 'rb') as f:
         while True:
-            data = f.read(partSize)
+            data = f.read(BUFFER)
             if not data:
                 break
             sha1.update(data)
@@ -33,7 +38,7 @@ def computeHashFile(filename):
 
 def computeHash(bt):
     sha1 = hashlib.sha1()
-    sha1.update()
+    sha1.update(bt)
     return sha1.hexdigest()
 
 def main():
@@ -49,10 +54,13 @@ def main():
     proxySocket = context.socket(zmq.REQ)
     proxySocket.connect("tcp://localhost:6666")
 
+    print("Operation: {}".format(operation))
+
     if operation == "upload":
-        proxySocket.send_multipart([b'upload'])
-        availableServers = proxySocket.recv()
+        proxySocket.send_multipart([b'availableServers'])
+        availableServers = proxySocket.recv_multipart()
         uploadFile(context, filename, availableServers)
+        print("Uploaded {} succesfully.".format(filename))
 
 if __name__=='__main__':
     main()
