@@ -28,6 +28,10 @@ def main():
             with open(storeAs, "wb") as f:
                 f.write(bt)
             clientSocket.send(b"Done")
+        elif operation == b'download':
+            f = open(data[0], "rb")
+            partOfFile = f.read()
+            clientSocket.send(partOfFile)
         else:
             clientSocket.send(b'Unsupported operation')
 
