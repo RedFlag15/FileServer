@@ -6,10 +6,21 @@ def sendIndexFile(socket, filename):
     with open(filename, "rb") as f:
         while True:
             data = f.read(partSize)
+            request = socket.recv()
             if not data:
+                break       
+            socket.send_multipart([filename.encode("ascii"), data])
+    socket.send_multipart([filename.encode("ascii"), b'done'])
+
+def recvIndexFile(socket, filename, data):
+    socket.send(b'got')
+    with open(filename, "wb") as f:
+        while True:
+            if data == b'done':
                 break
-            socket.send_multipart([filename, data.encode("ascii")])
-    socket.send(b'Done')
+            f.write(data)
+            op, filename, data = socket.recv_multipart()
+            socket.send(b'got')
 
 def main():
     serversAddress = []
@@ -40,9 +51,7 @@ def main():
             if operation == b'availableServers':
                 clientSocket.send_multipart(serversAddress)
             if operation == b'uploadIndexFile':
-                with open(args[0].decode("ascii"), "wb") as f:
-                    f.write(args[1].decode("ascii"))
-                clientSocket.send(b'Done')
+                recvIndexFile(clientSocket, args[0].decode("ascii"), args[1])
             if operation == b'newFile':
                 user = args[2].decode("ascii")
                 filename = args[1].decode("ascii")
@@ -52,9 +61,12 @@ def main():
             if operation == b'download':
                 user = args[0].decode("ascii")
                 filename = args[1].decode("ascii")
-                if filename in usersTable[user].keys():
-                    clientSocket.send(b'yes')
-                    sendIndexFile(clientSocket, usersTable[user][filename][0])       
+                if user in usersTable.keys():
+                    if filename in usersTable[user].keys():
+                        clientSocket.send(b'yes')
+                        sendIndexFile(clientSocket, usersTable[user][filename][0])       
+                    else:
+                        clientSocket.send(b'no')
                 else:
                     clientSocket.send(b'no')
             if operation == b'share':

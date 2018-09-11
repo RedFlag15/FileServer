@@ -1,14 +1,19 @@
+#kill zqm python: taskkill /F /IM python.exe
 import zmq, sys, hashlib
 
 partSize = 1024*1024*10
 
 def downloadIndexFile(socket):
-    while True:
-        filename, data = socket.recv_multipart()
-        with open(filename, "wb") as f:
-            f.write(data)
+    print("Downloading index file")
+    socket.send(b'IndexFile')
+    filename, data = socket.recv_multipart()
+    with open(filename, "wb") as f:
+        while True:
             if data == b'done':
                 break
+            f.write(data)
+            socket.send(b'IndexFile')
+            filename, data = socket.recv_multipart()
     return filename
 
     
@@ -19,8 +24,10 @@ def uploadIndexFile(socket, filename):
             data = f.read(partSize)
             if not data:
                 break
-            socket.send_multipart([b'uploadIndexFile', filename, data.encode("ascii"), ])
+            socket.send_multipart([b'uploadIndexFile', filename, data])
             response = socket.recv()
+        socket.send_multipart([b'uploadIndexFile', filename, b'done'])
+        response = socket.recv()
 
 def uploadFile(context, filename, servers):
     fileSha1 = bytes(computeHashFile(filename), "ascii")
@@ -38,11 +45,11 @@ def uploadFile(context, filename, servers):
             if not data:
                 break
             print("Uploading part {}".format(part))
-            newPart = bytes((sha1bt+','+servers[0]+'\n'), "ascii")
+            sha1bt = computeHash(data)
+            newPart = (sha1bt+','+servers[0].decode("ascii")+",\n").encode("ascii")
             indexFile.write(newPart)
             servers.append(servers.pop(0))
-            sha1bt = bytes(computeHash(data), "ascii")
-            sockets[0].send_multipart([b'upload', filename, data, sha1bt, fileSha1])
+            sockets[0].send_multipart([b'upload', filename, data, sha1bt.encode("ascii"), fileSha1])
             response = sockets[0].recv()
             print("Reply [%s ]" %(response))
             sockets.append(sockets.pop(0))
@@ -94,7 +101,7 @@ def main():
         print("Uploaded {} succesfully.".format(filename))
         print("Sending index file {} to proxy".format(indexFile))
         uploadIndexFile(proxySocket, indexFile)
-        proxySocket.send(b'newFile', indexFile, filename, username.encode("ascii"))
+        proxySocket.send_multipart([b'newFile', indexFile, filename, username.encode("ascii")])
         print(proxySocket.recv().decode("ascii"))
     if operation == 'download':
         proxySocket.send_multipart([b'download', username.encode("ascii"), filename])
@@ -102,12 +109,15 @@ def main():
         if response == b'yes':
             indexFile = downloadIndexFile(proxySocket)
             indexFile = open(indexFile, "rb")
-            donwloadedFile = open(filename, "wb")
+            donwloadedFile = open(filename, "ab")
             for line in indexFile:
+                line = line.decode("ascii")
+                print(line)
                 line = line.split(",")
+                print(line)
                 s = context.socket(zmq.REQ)
                 s.connect('tcp://' + line[1])
-                s.send_multipart(b'download', line[0].encode("ascii"))
+                s.send_multipart([b'download', line[0].encode("ascii")])
                 partOfFile = s.recv()
                 donwloadedFile.write(partOfFile)
             print("Download Complete")

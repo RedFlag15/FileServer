@@ -2,7 +2,7 @@ import zmq, sys
 
 def main():
     if len(sys.argv) != 2:
-        print("Sample call: python <server.py> <address: <ip>:<port>>")
+        print("Sample call: python server.py <address: <ip>:<port>>")
         exit()
 
     filesFolder = "files/"
@@ -29,7 +29,7 @@ def main():
                 f.write(bt)
             clientSocket.send(b"Done")
         elif operation == b'download':
-            f = open(data[0], "rb")
+            f = open(filesFolder+data[0].decode("ascii"), "rb")
             partOfFile = f.read()
             clientSocket.send(partOfFile)
         else:
