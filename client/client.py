@@ -1,5 +1,5 @@
 #kill zqm python: taskkill /F /IM python.exe
-import zmq, sys, hashlib
+import zmq, sys, hashlib, random
 
 partSize = 1024*1024*10
 
@@ -33,6 +33,7 @@ def uploadFile(context, filename, servers):
     fileSha1 = bytes(computeHashFile(filename), "ascii")
     indexFile = open(fileSha1.decode("ascii"), "wb")
     sockets = []
+    partsLocation = {}
     for address in servers:
         s = context.socket(zmq.REQ)
         s.connect("tcp://" + address.decode("ascii"))
@@ -48,16 +49,20 @@ def uploadFile(context, filename, servers):
             sha1bt = computeHash(data)
             newPart = (sha1bt+','+servers[0].decode("ascii")+",\n").encode("ascii")
             indexFile.write(newPart)
-            servers.append(servers.pop(0))
             sockets[0].send_multipart([b'upload', filename, data, sha1bt.encode("ascii"), fileSha1])
+            partsLocation[sha1bt] = servers[0].decode("ascii")
             response = sockets[0].recv()
             print("Reply [%s ]" %(response))
+            servers.append(servers.pop(0))
             sockets.append(sockets.pop(0))
             part += 1
+    indexFile.close()
+    sockIndexFile = random.choice(sockets)
+    print("Sending index file {} to server".format(fileSha1))
+    uploadIndexFile(sockIndexFile, fileSha1)
     for s in sockets:
         s.close()
-    indexFile.close()
-    return fileSha1
+    return fileSha1, str(partsLocation)
 
 
 def computeHashFile(filename):
@@ -97,12 +102,12 @@ def main():
     if operation == "upload":
         proxySocket.send_multipart([b'availableServers'])
         availableServers = proxySocket.recv_multipart()
-        indexFile = uploadFile(context, filename, availableServers)
+        indexFile, partsLocation = uploadFile(context, filename, availableServers)
         print("Uploaded {} succesfully.".format(filename))
-        print("Sending index file {} to proxy".format(indexFile))
-        uploadIndexFile(proxySocket, indexFile)
-        proxySocket.send_multipart([b'newFile', indexFile, filename, username.encode("ascii")])
+        proxySocket.send_multipart([b'newFile', indexFile, filename, username.encode("ascii"), partsLocation.encode("ascii")])
         print(proxySocket.recv().decode("ascii"))
+
+    """ Download con index file
     if operation == 'download':
         proxySocket.send_multipart([b'download', username.encode("ascii"), filename])
         response = proxySocket.recv()
@@ -122,7 +127,25 @@ def main():
                 donwloadedFile.write(partOfFile)
             print("Download Complete")
         else:
-            print("This file doesnt exist")
+            print("This file doesnt exist") """
+    
+    if operation == 'download':
+        proxySocket.send_multipart([b'download', username.encode("ascii"), filename])
+        response = proxySocket.recv()
+        if response != b'no':
+            response = eval(response.decode("ascii"))
+            downloadedFile = open(filename, "ab")
+            for part in response.keys():
+                s = context.socket(zmq.REQ)
+                s.connect('tcp://' + response[part])
+                s.send_multipart([b'download', part.encode("ascii")])
+                partOfFile = s.recv()
+                downloadedFile.write(partOfFile)
+            downloadedFile.close()
+            print("Download complete")
+        else:
+            print("This file doesn't exist")
+
     if operation == 'share':
         proxySocket.send_multipart([b'share', username.encode("ascii"), filename])
         response = proxySocket.recv()

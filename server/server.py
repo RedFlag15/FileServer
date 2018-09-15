@@ -1,5 +1,15 @@
 import zmq, sys
 
+def recvIndexFile(socket, filename, data):
+    socket.send(b'got')
+    with open(filename, "wb") as f:
+        while True:
+            if data == b'done':
+                break
+            f.write(data)
+            op, filename, data = socket.recv_multipart()
+            socket.send(b'got')
+
 def main():
     if len(sys.argv) != 2:
         print("Sample call: python server.py <address: <ip>:<port>>")
@@ -32,8 +42,11 @@ def main():
             f = open(filesFolder+data[0].decode("ascii"), "rb")
             partOfFile = f.read()
             clientSocket.send(partOfFile)
+        elif operation == b'uploadIndexFile':
+            recvIndexFile(clientSocket, data[0].decode("ascii"), data[1])
         else:
             clientSocket.send(b'Unsupported operation')
+        
 
 if __name__ == '__main__':
     main()

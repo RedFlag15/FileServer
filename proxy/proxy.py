@@ -12,19 +12,10 @@ def sendIndexFile(socket, filename):
             socket.send_multipart([filename.encode("ascii"), data])
     socket.send_multipart([filename.encode("ascii"), b'done'])
 
-def recvIndexFile(socket, filename, data):
-    socket.send(b'got')
-    with open(filename, "wb") as f:
-        while True:
-            if data == b'done':
-                break
-            f.write(data)
-            op, filename, data = socket.recv_multipart()
-            socket.send(b'got')
-
 def main():
     serversAddress = []
     usersTable = {}
+    partsFilesTable = {}
 
     context = zmq.Context()
     serverSocket = context.socket(zmq.REP)
@@ -48,16 +39,19 @@ def main():
                     clientSocket.send('New User: {}'.format(args[0]).encode("ascii"))
                 else:
                     clientSocket.send('Welcome Back: {}'.format(args[0]).encode("ascii"))
+
             if operation == b'availableServers':
                 clientSocket.send_multipart(serversAddress)
-            if operation == b'uploadIndexFile':
-                recvIndexFile(clientSocket, args[0].decode("ascii"), args[1])
+
             if operation == b'newFile':
+                partsLocation = eval(args[3].decode("ascii"))
                 user = args[2].decode("ascii")
                 filename = args[1].decode("ascii")
                 shaFile = args[0].decode("ascii")
                 usersTable[user] = {filename : [shaFile, user]}
+                partsFilesTable[shaFile] = partsLocation
                 clientSocket.send("New File {}".format(filename).encode("ascii"))
+            """ Download with index file
             if operation == b'download':
                 user = args[0].decode("ascii")
                 filename = args[1].decode("ascii")
@@ -69,6 +63,19 @@ def main():
                         clientSocket.send(b'no')
                 else:
                     clientSocket.send(b'no')
+            """
+            if operation == b'download':
+                user = args[0].decode("ascii")
+                filename = args[1].decode("ascii")
+                if user in usersTable.keys():
+                    if filename in usersTable[user].keys():
+                        partsAndLocation = str(partsFilesTable[usersTable[user][filename][0]]).encode("ascii")
+                        clientSocket.send(partsAndLocation)
+                    else:
+                        clientSocket.send(b'no')
+                else:
+                    clientSocket.send(b'no')
+
             if operation == b'share':
                 user = args[0].decode("ascii")
                 filename = args[1].decode("ascii")
@@ -83,6 +90,7 @@ def main():
 
                 else:
                     clientSocket.send(b'no')
+
         if serverSocket in sockets:
             operation, *rest = serverSocket.recv_multipart()
             if operation == b'newServer':
